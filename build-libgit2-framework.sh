@@ -8,10 +8,10 @@ set -e
 rm -rf $DEPENDENCIES_ROOT
 mkdir $DEPENDENCIES_ROOT
 rm -rf $REPO_ROOT/*.xcframework
-rm -rf $REPO_ROOT/install*
+#rm -rf $REPO_ROOT/install*
 mkdir $REPO_ROOT/install
 
-AVAILABLE_PLATFORMS=(iphoneos iphonesimulator maccatalyst maccatalyst-arm64 macosx-arm64 macosx)
+AVAILABLE_PLATFORMS=(iphoneos iphonesimulator iphonesimulator-arm64 macosx-arm64 macosx)
 
 ### Setup common environment variables to run CMake for a given platform
 ### Usage:      setup_variables PLATFORM INSTALLDIR
@@ -46,7 +46,12 @@ function setup_variables() {
                 -DCMAKE_OSX_SYSROOT=$SYSROOT);;
 
         "iphonesimulator")
-            ARCH=$(arch)
+            ARCH=x86_64
+            SYSROOT=`xcodebuild -version -sdk iphonesimulator Path`
+            CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=$ARCH -DCMAKE_OSX_SYSROOT=$SYSROOT);;
+
+        "iphonesimulator-arm64")
+            ARCH=arm64
             SYSROOT=`xcodebuild -version -sdk iphonesimulator Path`
             CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=$ARCH -DCMAKE_OSX_SYSROOT=$SYSROOT);;
 
@@ -100,19 +105,21 @@ function build_openssl() {
     setup_variables $1 install-openssl
 
     # It is better to remove and redownload the source since building make the source code directory dirty!
-    rm -rf openssl-3.0.0
-    test -f openssl-3.0.0.tar.gz || wget -q https://www.openssl.org/source/openssl-3.0.0.tar.gz
-    tar xzf openssl-3.0.0.tar.gz
-    cd openssl-3.0.0
+    rm -rf openssl-3.1.4
+    test -f openssl-3.1.4.tar.gz || wget -q https://www.openssl.org/source/openssl-3.1.4.tar.gz
+    tar xzf openssl-3.1.4.tar.gz
+    cd openssl-3.1.4
 
     case $PLATFORM in
         "iphoneos")
             TARGET_OS=ios64-cross
             export CFLAGS="-isysroot $SYSROOT -arch $ARCH -mios-version-min=13.0";;
 
-        "iphonesimulator")
-            TARGET_OS=iossimulator-xcrun
-            export CFLAGS="-isysroot $SYSROOT -miphonesimulator-version-min=13.0";;
+        "iphonesimulator"|"iphonesimulator-arm64")
+			TARGET_OS=iossimulator-xcrun
+			export CFLAGS="-isysroot $SYSROOT -arch $ARCH -miphonesimulator-version-min=13.0";;
+            #TARGET_OS=iossimulator-xcrun
+            #export CFLAGS="-isysroot $SYSROOT -miphonesimulator-version-min=13.0";;
 
         "maccatalyst"|"maccatalyst-arm64")
             TARGET_OS=darwin64-$ARCH-cc
@@ -142,10 +149,10 @@ function build_openssl() {
 function build_libssh2() {
     setup_variables $1 install-libssh2
 
-    rm -rf libssh2-1.10.0
-    test -f libssh2-1.10.0.tar.gz || wget -q https://www.libssh2.org/download/libssh2-1.10.0.tar.gz
-    tar xzf libssh2-1.10.0.tar.gz
-    cd libssh2-1.10.0
+    rm -rf libssh2-1.11.0
+    test -f libssh2-1.11.0.tar.gz || wget -q https://www.libssh2.org/download/libssh2-1.11.0.tar.gz
+    tar xzf libssh2-1.11.0.tar.gz
+    cd libssh2-1.11.0
 
     rm -rf build && mkdir build && cd build
 
@@ -165,10 +172,10 @@ function build_libssh2() {
 function build_libgit2() {
     setup_variables $1 install
 
-    rm -rf libgit2-1.3.0
-    test -f v1.3.0.zip || wget -q https://github.com/libgit2/libgit2/archive/refs/tags/v1.3.0.zip
-    ditto -x -k --sequesterRsrc --rsrc v1.3.0.zip ./
-    cd libgit2-1.3.0
+    rm -rf libgit2-1.3.1
+    test -f v1.3.1.zip || wget -q https://github.com/libgit2/libgit2/archive/refs/tags/v1.3.1.zip
+    ditto -x -k --sequesterRsrc --rsrc v1.3.1.zip ./
+    cd libgit2-1.3.1
 
     rm -rf build && mkdir build && cd build
 
@@ -188,7 +195,7 @@ function build_xcframework() {
     local INSTALLDIR=$2
     local XCFRAMEWORKNAME=$3
     shift 3
-    local PLATFORMS=( iphoneos iphonesimulator )
+    local PLATFORMS=( iphoneos iphonesimulator macosx )
     local FRAMEWORKS_ARGS=()
 
     echo "Creating fat binary for macosx"
@@ -196,10 +203,15 @@ function build_xcframework() {
     lipo "$INSTALLDIR/macosx/lib/$FWNAME.a" "$INSTALLDIR/macosx-arm64/lib/$FWNAME.a" -create -output "$INSTALLDIR/macosx-fat/lib/$FWNAME.a"
     FRAMEWORKS_ARGS+=("-library" "$INSTALLDIR/macosx-fat/lib/$FWNAME.a" "-headers" "$INSTALLDIR/macosx/include")
 
-    echo "Creating fat binary for maccatalyst"
-    mkdir -p "$INSTALLDIR/maccatalyst-fat/lib"
-    lipo "$INSTALLDIR/maccatalyst/lib/$FWNAME.a" "$INSTALLDIR/maccatalyst-arm64/lib/$FWNAME.a" -create -output "$INSTALLDIR/maccatalyst-fat/lib/$FWNAME.a"
-    FRAMEWORKS_ARGS+=("-library" "$INSTALLDIR/maccatalyst-fat/lib/$FWNAME.a" "-headers" "$INSTALLDIR/maccatalyst/include")
+    echo "Creating fat binary for iphonesimulator"
+    mkdir -p "$INSTALLDIR/iphonesimulator-fat/lib"
+    lipo "$INSTALLDIR/iphonesimulator/lib/$FWNAME.a" "$INSTALLDIR/iphonesimulator-arm64/lib/$FWNAME.a" -create -output "$INSTALLDIR/iphonesimulator-fat/lib/$FWNAME.a"
+    FRAMEWORKS_ARGS+=("-library" "$INSTALLDIR/iphonesimulator-fat/lib/$FWNAME.a" "-headers" "$INSTALLDIR/iphonesimulator/include")
+
+    #echo "Creating fat binary for maccatalyst"
+    #mkdir -p "$INSTALLDIR/maccatalyst-fat/lib"
+    #lipo "$INSTALLDIR/maccatalyst/lib/$FWNAME.a" "$INSTALLDIR/maccatalyst-arm64/lib/$FWNAME.a" -create -output "$INSTALLDIR/maccatalyst-fat/lib/$FWNAME.a"
+    #FRAMEWORKS_ARGS+=("-library" "$INSTALLDIR/maccatalyst-fat/lib/$FWNAME.a" "-headers" "$INSTALLDIR/maccatalyst/include")
 
     echo "Building" $FWNAME "XCFramework containing" ${PLATFORMS[@]}
 
@@ -217,27 +229,36 @@ function copy_modulemap() {
     local FWDIRS=$(find Clibgit2.xcframework -mindepth 1 -maxdepth 1 -type d)
     for d in ${FWDIRS[@]}; do
         echo $d
-        cp Clibgit2_modulemap $d/Headers/module.modulemap
+        mkdir -p $d/Headers/git2
+        cp Clibgit2_modulemap $d/Headers/git2/module.modulemap
     done
 }
 
 ### Build libgit2 and Clibgit2 frameworks for all available platforms
 
 for p in ${AVAILABLE_PLATFORMS[@]}; do
-    echo "Build libraries for $p"
+    continue;
+    echo "## Build libraries for $p"
     
     # build_libpcre $p
+    echo "## Build openssl"
     build_openssl $p
+    echo "## Build libssh2"
     build_libssh2 $p
+    echo "## Build libgit2"
     build_libgit2 $p
 
     # Put all of the generated *.a files into a single *.a file that will be in our framework
+    echo "## Put all of the generated *.a files into a single *.a file that will be in our framework"
     cd $REPO_ROOT
+    echo "## Running libtool ..."
     libtool -v -static -o libgit2_all.a install-openssl/$p/lib/*.a install/$p/lib/*.a install-libssh2/$p/lib/*.a
     cp libgit2_all.a install/$p/lib
     rm libgit2_all.a
+    echo "## Done with xcframework build prerequisite steps"
 done
 
+echo "## Build xcframework"
 build_xcframework libgit2_all install Clibgit2
 cd $REPO_ROOT
 copy_modulemap
